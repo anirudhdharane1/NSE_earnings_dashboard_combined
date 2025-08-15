@@ -16,15 +16,15 @@ interface StatsCardsProps {
 export function StatsCards({ data, ticker }: StatsCardsProps) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
+      <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium text-muted-foreground">
             Avg Absolute Move
           </CardTitle>
-          <TrendingUp className="h-4 w-4 text-primary" />
+          <TrendingUp className="h-4 w-4 text-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold text-primary">
+          <div className="text-2xl font-bold text-foreground">
             {data.avgMove.toFixed(1)}%
           </div>
           <p className="text-xs text-muted-foreground">

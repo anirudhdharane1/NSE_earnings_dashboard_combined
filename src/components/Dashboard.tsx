@@ -7,11 +7,13 @@ import { Label } from "@/components/ui/label";
 import { StatsCards } from "./StatsCards";
 import { ResultsTable } from "./ResultsTable";
 import { ChartDisplay } from "./ChartDisplay";
+import { HistogramChart } from "./HistogramChart";
 import { toast } from "@/hooks/use-toast";
 
 export default function Dashboard() {
   const [ticker, setTicker] = useState("");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const [analysisData, setAnalysisData] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -23,6 +25,37 @@ export default function Dashboard() {
         title: "File uploaded successfully",
         description: `${file.name} is ready for processing`,
       });
+    }
+  };
+
+  const handleFileDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setDragOver(false);
+    const file = event.dataTransfer.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      setUploadedFile(file);
+      toast({
+        title: "File uploaded successfully",
+        description: `${file.name} is ready for processing`,
+      });
+    }
+  };
+
+  const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    const items = event.clipboardData?.items;
+    if (items) {
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            setUploadedFile(file);
+            toast({
+              title: "Image pasted successfully",
+              description: `${file.name || 'Pasted image'} is ready for processing`,
+            });
+          }
+        }
+      }
     }
   };
 
@@ -52,7 +85,25 @@ export default function Dashboard() {
           { date: "2024-04-18", move: -2.1, direction: "down" },
           { date: "2024-07-22", move: 6.8, direction: "up" },
           { date: "2024-10-25", move: -1.3, direction: "down" },
-        ]
+          { date: "2023-10-20", move: 5.2, direction: "up" },
+          { date: "2023-07-18", move: -3.8, direction: "down" },
+          { date: "2023-04-15", move: 2.1, direction: "up" },
+          { date: "2023-01-12", move: -4.5, direction: "down" },
+          { date: "2022-10-18", move: 7.3, direction: "up" },
+          { date: "2022-07-15", move: -1.9, direction: "down" },
+          { date: "2022-04-12", move: 3.7, direction: "up" },
+          { date: "2022-01-14", move: -5.1, direction: "down" },
+        ],
+        histogram: [
+          { binStart: -6, binEnd: -4, frequency: 3, binLabel: "-6 to -4" },
+          { binStart: -4, binEnd: -2, frequency: 4, binLabel: "-4 to -2" },
+          { binStart: -2, binEnd: 0, frequency: 2, binLabel: "-2 to 0" },
+          { binStart: 0, binEnd: 2, frequency: 1, binLabel: "0 to 2" },
+          { binStart: 2, binEnd: 4, frequency: 3, binLabel: "2 to 4" },
+          { binStart: 4, binEnd: 6, frequency: 2, binLabel: "4 to 6" },
+          { binStart: 6, binEnd: 8, frequency: 2, binLabel: "6 to 8" },
+        ],
+        mean: 0.8
       };
       
       setAnalysisData(mockData);
@@ -76,12 +127,12 @@ export default function Dashboard() {
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
-        <div className="text-center space-y-6 py-12">
-          <h1 className="text-5xl font-bold text-foreground flex items-center justify-center gap-3">
-            <TrendingUp className="w-12 h-12 text-primary" />
+        <div className="text-center space-y-8 py-16">
+          <h1 className="text-6xl font-bold text-foreground flex items-center justify-center gap-4">
+            <TrendingUp className="w-16 h-16 text-primary" />
             NSE Earnings Analytics
           </h1>
-          <p className="text-lg text-muted-foreground">
+          <p className="text-xl text-muted-foreground">
             Analyze historical earnings impact on stock price movements
           </p>
         </div>
@@ -122,14 +173,40 @@ export default function Dashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div>
-                <Label htmlFor="file-upload">Earnings Schedule Image</Label>
+              <div 
+                className={`border-2 border-dashed rounded-lg p-6 transition-colors ${
+                  dragOver ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'
+                }`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragOver(true);
+                }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={handleFileDrop}
+                onPaste={handlePaste}
+                tabIndex={0}
+              >
+                <div className="text-center space-y-2">
+                  <Upload className="w-8 h-8 mx-auto text-muted-foreground" />
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">
+                      Drag & drop, paste, or click to upload
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      PNG, JPG up to 10MB
+                    </p>
+                  </div>
+                </div>
                 <Input
                   id="file-upload"
                   type="file"
                   accept="image/*"
                   onChange={handleFileUpload}
-                  className="mt-2"
+                  className="hidden"
+                />
+                <Label
+                  htmlFor="file-upload"
+                  className="absolute inset-0 cursor-pointer"
                 />
               </div>
               {uploadedFile && (
@@ -150,6 +227,16 @@ export default function Dashboard() {
               <ResultsTable data={analysisData.data} />
               <ChartDisplay data={analysisData.data} ticker={ticker} />
             </div>
+
+            {/* Histogram Chart */}
+            <HistogramChart 
+              data={analysisData.histogram}
+              ticker={ticker}
+              mean={analysisData.mean}
+              stdDev1={analysisData.stdDev1}
+              stdDev2={analysisData.stdDev2}
+              stdDev3={analysisData.stdDev3}
+            />
 
             {/* Download Section */}
             <Card>
