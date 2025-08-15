@@ -76,44 +76,18 @@ export default function Dashboard() {
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl font-bold text-foreground flex items-center justify-center gap-2">
-            <TrendingUp className="w-8 h-8 text-primary" />
+        <div className="text-center space-y-6 py-12">
+          <h1 className="text-5xl font-bold text-foreground flex items-center justify-center gap-3">
+            <TrendingUp className="w-12 h-12 text-primary" />
             NSE Earnings Analytics
           </h1>
-          <p className="text-muted-foreground">
+          <p className="text-lg text-muted-foreground">
             Analyze historical earnings impact on stock price movements
           </p>
         </div>
 
         {/* Input Section */}
         <div className="grid md:grid-cols-2 gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Upload className="w-5 h-5" />
-                Upload Earnings Data
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label htmlFor="file-upload">Earnings Schedule Image</Label>
-                <Input
-                  id="file-upload"
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  className="mt-2"
-                />
-              </div>
-              {uploadedFile && (
-                <p className="text-sm text-muted-foreground">
-                  ✓ {uploadedFile.name} uploaded
-                </p>
-              )}
-            </CardContent>
-          </Card>
-
           <Card>
             <CardHeader>
               <CardTitle>Stock Symbol</CardTitle>
@@ -137,6 +111,32 @@ export default function Dashboard() {
               >
                 {isProcessing ? "Processing..." : "Run Analysis"}
               </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Upload className="w-5 h-5" />
+                Upload Earnings Data
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label htmlFor="file-upload">Earnings Schedule Image</Label>
+                <Input
+                  id="file-upload"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileUpload}
+                  className="mt-2"
+                />
+              </div>
+              {uploadedFile && (
+                <p className="text-sm text-muted-foreground">
+                  ✓ {uploadedFile.name} uploaded
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>
