@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Upload, TrendingUp, BarChart3, Download } from "lucide-react";
+import { TrendingUp, BarChart3, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -8,55 +8,20 @@ import { StatsCards } from "./StatsCards";
 import { ResultsTable } from "./ResultsTable";
 import { ChartDisplay } from "./ChartDisplay";
 import { HistogramChart } from "./HistogramChart";
+import UploadBox from "./UploadBox";
 import { toast } from "@/hooks/use-toast";
 
 export default function Dashboard() {
   const [ticker, setTicker] = useState("");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [analysisData, setAnalysisData] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      setUploadedFile(file);
-      toast({
-        title: "File uploaded successfully",
-        description: `${file.name} is ready for processing`,
-      });
-    }
-  };
-
-  const handleFileDrop = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    setDragOver(false);
-    const file = event.dataTransfer.files?.[0];
-    if (file && file.type.startsWith('image/')) {
-      setUploadedFile(file);
-      toast({
-        title: "File uploaded successfully",
-        description: `${file.name} is ready for processing`,
-      });
-    }
-  };
-
-  const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
-    const items = event.clipboardData?.items;
-    if (items) {
-      for (const item of items) {
-        if (item.type.startsWith('image/')) {
-          const file = item.getAsFile();
-          if (file) {
-            setUploadedFile(file);
-            toast({
-              title: "Image pasted successfully",
-              description: `${file.name || 'Pasted image'} is ready for processing`,
-            });
-          }
-        }
-      }
-    }
+  const handleFileUpload = (file: File) => {
+    setUploadedFile(file);
+    setUploadError(null);
   };
 
   const handleAnalysis = async () => {
@@ -70,9 +35,41 @@ export default function Dashboard() {
     }
 
     setIsProcessing(true);
+    setUploadError(null);
     
-    // Simulate analysis processing
-    setTimeout(() => {
+    try {
+      const formData = new FormData();
+      formData.append('file', uploadedFile);
+      formData.append('ticker', ticker);
+      
+      const response = await fetch('http://localhost:8000/analyze', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Analysis failed: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      setAnalysisData(data);
+      
+      toast({
+        title: "Analysis complete",
+        description: "Earnings impact analysis has been generated",
+      });
+      
+    } catch (error) {
+      console.error('Analysis error:', error);
+      setUploadError(error instanceof Error ? error.message : 'Analysis failed');
+      
+      toast({
+        title: "Analysis failed",
+        description: "Please check your connection and try again",
+        variant: "destructive",
+      });
+      
+      // Fallback to mock data for demonstration
       const mockData = {
         totalEarnings: 12,
         avgMove: 4.2,
@@ -105,15 +102,10 @@ export default function Dashboard() {
         ],
         mean: 0.8
       };
-      
       setAnalysisData(mockData);
+    } finally {
       setIsProcessing(false);
-      
-      toast({
-        title: "Analysis complete",
-        description: "Earnings impact analysis has been generated",
-      });
-    }, 3000);
+    }
   };
 
   const handleDownload = (format: 'csv' | 'excel') => {
@@ -167,52 +159,18 @@ export default function Dashboard() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Upload className="w-5 h-5" />
-                Upload Earnings Data
-              </CardTitle>
+              <CardTitle>Upload Earnings Data</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div 
-                className={`border-2 border-dashed rounded-lg p-6 transition-colors ${
-                  dragOver ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'
-                }`}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setDragOver(true);
-                }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={handleFileDrop}
-                onPaste={handlePaste}
-                tabIndex={0}
-              >
-                <div className="text-center space-y-2">
-                  <Upload className="w-8 h-8 mx-auto text-muted-foreground" />
-                  <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">
-                      Drag & drop, paste, or click to upload
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      PNG, JPG up to 10MB
-                    </p>
-                  </div>
+            <CardContent>
+              <UploadBox 
+                onFileUpload={handleFileUpload}
+                uploadedFile={uploadedFile}
+                isProcessing={isProcessing}
+              />
+              {uploadError && (
+                <div className="mt-4 text-sm text-destructive">
+                  {uploadError}
                 </div>
-                <Input
-                  id="file-upload"
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-                <Label
-                  htmlFor="file-upload"
-                  className="absolute inset-0 cursor-pointer"
-                />
-              </div>
-              {uploadedFile && (
-                <p className="text-sm text-muted-foreground">
-                  ✓ {uploadedFile.name} uploaded
-                </p>
               )}
             </CardContent>
           </Card>
