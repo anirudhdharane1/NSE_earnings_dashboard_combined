@@ -1,64 +1,61 @@
 import { useState, useRef, useCallback } from "react";
-import { Upload, Loader2, AlertCircle } from "lucide-react";
+import { Upload, Loader2, AlertCircle, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { toast } from "@/hooks/use-toast";
 
 interface UploadBoxProps {
-  onFileUpload: (file: File) => void;
-  uploadedFile: File | null;
+  onFileUpload: (files: File[]) => void;              // Array of files
+  uploadedFile: File[] | null;
   isProcessing?: boolean;
+  onRemoveFile: (idx: number) => void;                // <-- NEW callback
 }
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
-export default function UploadBox({ onFileUpload, uploadedFile, isProcessing }: UploadBoxProps) {
+export default function UploadBox({ onFileUpload, uploadedFile, isProcessing, onRemoveFile }: UploadBoxProps) {
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isFocused, setIsFocused] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const validateFile = useCallback((file: File): boolean => {
-    setError(null);
-
     if (!ALLOWED_TYPES.includes(file.type)) {
       setError(`Invalid file type. Please upload ${ALLOWED_TYPES.map(t => t.split('/')[1]).join(', ')} images only.`);
       return false;
     }
-
     if (file.size > MAX_FILE_SIZE) {
       setError('File size too large. Please upload files smaller than 10MB.');
       return false;
     }
-
     return true;
   }, []);
 
-  const handleFileSelect = useCallback((file: File) => {
-    if (validateFile(file)) {
-      onFileUpload(file);
-      toast({
-        title: "File uploaded successfully",
-        description: `${file.name} is ready for processing`,
-      });
+  const handleFileSelect = useCallback((files: File[]) => {
+    setError(null);
+    for (const file of files) {
+      if (!validateFile(file)) return;
     }
+    onFileUpload(files);
+    toast({
+      title: "Files uploaded successfully",
+      description: `${files.length} file${files.length > 1 ? 's' : ''} ready for processing`,
+    });
   }, [validateFile, onFileUpload]);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      handleFileSelect(file);
+    const filesArray = event.target.files ? Array.from(event.target.files) : [];
+    if (filesArray.length > 0) {
+      handleFileSelect(filesArray);
     }
   };
 
   const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setDragOver(false);
-    
-    const file = event.dataTransfer.files?.[0];
-    if (file) {
-      handleFileSelect(file);
+    const filesArray = event.dataTransfer.files ? Array.from(event.dataTransfer.files) : [];
+    if (filesArray.length > 0) {
+      handleFileSelect(filesArray);
     }
   };
 
@@ -69,29 +66,28 @@ export default function UploadBox({ onFileUpload, uploadedFile, isProcessing }: 
 
   const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
-    // Only set dragOver to false if we're leaving the upload box entirely
     if (!event.currentTarget.contains(event.relatedTarget as Node)) {
       setDragOver(false);
     }
   };
 
   const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
-    if (!isFocused) return; // Only handle paste when focused
-    
+    if (!isFocused) return;
     const items = event.clipboardData?.items;
+    const files: File[] = [];
     if (items) {
       for (const item of items) {
         if (ALLOWED_TYPES.includes(item.type)) {
           const file = item.getAsFile();
-          if (file) {
-            handleFileSelect(file);
-            toast({
-              title: "Image pasted successfully",
-              description: `Pasted image is ready for processing`,
-            });
-          }
-          break;
+          if (file) files.push(file);
         }
+      }
+      if (files.length > 0) {
+        handleFileSelect(files);
+        toast({
+          title: "Image(s) pasted successfully",
+          description: `Pasted ${files.length} image${files.length > 1 ? 's' : ''} ready for processing`,
+        });
       }
     }
   };
@@ -127,7 +123,7 @@ export default function UploadBox({ onFileUpload, uploadedFile, isProcessing }: 
         onBlur={() => setIsFocused(false)}
         tabIndex={0}
         role="button"
-        aria-label="Upload earnings data image file"
+        aria-label="Upload earnings data image files"
         aria-describedby="upload-instructions"
       >
         <div className="text-center space-y-3">
@@ -138,20 +134,18 @@ export default function UploadBox({ onFileUpload, uploadedFile, isProcessing }: 
           ) : (
             <Upload className="w-8 h-8 mx-auto text-muted-foreground" />
           )}
-          
           <div className="space-y-1">
             <p className="text-sm text-muted-foreground" id="upload-instructions">
-              {isProcessing 
-                ? "Processing..." 
-                : "Drag & drop, paste (Ctrl+V), or click to upload"
+              {isProcessing
+                ? "Processing..."
+                : "Drag & drop, paste (Ctrl+V), or click to upload multiple images"
               }
             </p>
             <p className="text-xs text-muted-foreground">
-              JPEG, PNG, WebP • Max 10MB
+              JPEG, PNG, WebP • Max 10MB each
             </p>
           </div>
         </div>
-        
         <Input
           ref={fileInputRef}
           id="file-upload"
@@ -160,6 +154,7 @@ export default function UploadBox({ onFileUpload, uploadedFile, isProcessing }: 
           onChange={handleFileUpload}
           className="hidden"
           disabled={isProcessing}
+          multiple
         />
       </div>
 
@@ -170,10 +165,33 @@ export default function UploadBox({ onFileUpload, uploadedFile, isProcessing }: 
         </div>
       )}
 
-      {uploadedFile && !error && (
-        <div className="text-sm text-muted-foreground flex items-center gap-2">
-          <div className="w-2 h-2 bg-green-500 rounded-full" />
-          {uploadedFile.name} uploaded
+      {uploadedFile && uploadedFile.length > 0 && (
+        <div className="text-sm text-muted-foreground flex flex-col gap-1">
+          {uploadedFile.map((file, idx) => (
+            <div key={file.name + idx} className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-green-500 rounded-full" />
+              {file.name} uploaded
+              <button
+                type="button"
+                aria-label="Remove file"
+                className="ml-2 text-destructive hover:text-destructive/80"
+                onClick={e => {
+                  e.stopPropagation();
+                  onRemoveFile(idx);
+                }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  cursor: "pointer"
+                }}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>

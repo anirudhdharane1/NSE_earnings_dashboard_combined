@@ -1,5 +1,7 @@
+
+
 import { useState } from "react";
-import { TrendingUp, BarChart3, Download } from "lucide-react";
+import { TrendingUp, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,104 +13,123 @@ import { HistogramChart } from "./HistogramChart";
 import UploadBox from "./UploadBox";
 import { toast } from "@/hooks/use-toast";
 
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
+
 export default function Dashboard() {
+  // uploadedFile state is now an array of Files or null
   const [ticker, setTicker] = useState("");
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [dragOver, setDragOver] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState<File[] | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [analysisData, setAnalysisData] = useState(null);
+  const [analysisData, setAnalysisData] = useState<any>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const handleFileUpload = (file: File) => {
-    setUploadedFile(file);
+  const handleFileUpload = (files: File[]) => {
+    setUploadedFile(prev =>
+      prev && prev.length > 0
+        ? [...prev, ...files.filter(f => !prev.some(prevFile => prevFile.name === f.name && prevFile.size === f.size))]
+        : files
+    );
     setUploadError(null);
   };
 
+  // Remove a file by index
+  const handleRemoveFile = (idx: number) => {
+    if (!uploadedFile) return;
+    const newFiles = uploadedFile.filter((_, index) => index !== idx);
+    setUploadedFile(newFiles.length > 0 ? newFiles : null);
+  };
+
   const handleAnalysis = async () => {
-    if (!uploadedFile || !ticker) {
+    if (!uploadedFile || uploadedFile.length === 0 || !ticker) {
       toast({
         title: "Missing information",
-        description: "Please upload an image and enter a ticker symbol",
+        description: "Please upload one or more images and enter a ticker symbol",
         variant: "destructive",
       });
       return;
     }
-
     setIsProcessing(true);
     setUploadError(null);
-    
     try {
       const formData = new FormData();
-      formData.append('file', uploadedFile);
-      formData.append('ticker', ticker);
-      
-      const response = await fetch('http://localhost:8000/analyze', {
-        method: 'POST',
+      uploadedFile.forEach(file => {
+        formData.append("images", file);
+      });
+      formData.append("ticker", ticker);
+      const response = await fetch("http://localhost:8000/analyze", {
+        method: "POST",
         body: formData,
       });
-      
       if (!response.ok) {
         throw new Error(`Analysis failed: ${response.statusText}`);
       }
-      
       const data = await response.json();
       setAnalysisData(data);
-      
       toast({
         title: "Analysis complete",
         description: "Earnings impact analysis has been generated",
       });
-      
-    } catch (error) {
-      console.error('Analysis error:', error);
-      setUploadError(error instanceof Error ? error.message : 'Analysis failed');
-      
+    } catch (error: any) {
+      console.error("Analysis error:", error);
+      setUploadError(error?.message || "Analysis failed");
       toast({
         title: "Analysis failed",
         description: "Please check your connection and try again",
         variant: "destructive",
       });
-      
-      // Fallback to mock data for demonstration
-      const mockData = {
-        totalEarnings: 12,
-        avgMove: 4.2,
-        winRate: 58.3,
-        stdDev1: 6.8,
-        stdDev2: 10.4,
-        stdDev3: 14.1,
-        data: [
-          { date: "2024-01-15", move: 3.4, direction: "up" },
-          { date: "2024-04-18", move: -2.1, direction: "down" },
-          { date: "2024-07-22", move: 6.8, direction: "up" },
-          { date: "2024-10-25", move: -1.3, direction: "down" },
-          { date: "2023-10-20", move: 5.2, direction: "up" },
-          { date: "2023-07-18", move: -3.8, direction: "down" },
-          { date: "2023-04-15", move: 2.1, direction: "up" },
-          { date: "2023-01-12", move: -4.5, direction: "down" },
-          { date: "2022-10-18", move: 7.3, direction: "up" },
-          { date: "2022-07-15", move: -1.9, direction: "down" },
-          { date: "2022-04-12", move: 3.7, direction: "up" },
-          { date: "2022-01-14", move: -5.1, direction: "down" },
-        ],
-        histogram: [
-          { binStart: -6, binEnd: -4, frequency: 3, binLabel: "-6 to -4" },
-          { binStart: -4, binEnd: -2, frequency: 4, binLabel: "-4 to -2" },
-          { binStart: -2, binEnd: 0, frequency: 2, binLabel: "-2 to 0" },
-          { binStart: 0, binEnd: 2, frequency: 1, binLabel: "0 to 2" },
-          { binStart: 2, binEnd: 4, frequency: 3, binLabel: "2 to 4" },
-          { binStart: 4, binEnd: 6, frequency: 2, binLabel: "4 to 6" },
-          { binStart: 6, binEnd: 8, frequency: 2, binLabel: "6 to 8" },
-        ],
-        mean: 0.8
-      };
-      setAnalysisData(mockData);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const handleDownload = (format: 'csv' | 'excel') => {
+  // Export CSV functionality
+  const exportCSV = () => {
+    if (!analysisData?.results) return;
+    const headers = ['Date', 'Price Change (%)', 'Open', 'High', 'Low', 'Close'];
+    const rows = analysisData.results.map(row => [
+      row.date,
+      row.price_change_pct !== null ? row.price_change_pct.toFixed(2) : '',
+      row.open !== null ? row.open.toFixed(2) : '',
+      row.high !== null ? row.high.toFixed(2) : '',
+      row.low !== null ? row.low.toFixed(2) : '',
+      row.close !== null ? row.close.toFixed(2) : '',
+    ]);
+    const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `${ticker}_earnings_data.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Export Excel functionality
+  const exportExcel = () => {
+    if (!analysisData?.results) return;
+    const worksheetData = [
+      ['Date', 'Price Change (%)', 'Open', 'High', 'Low', 'Close'],
+      ...analysisData.results.map(row => [
+        row.date,
+        row.price_change_pct !== null ? row.price_change_pct.toFixed(2) : '',
+        row.open !== null ? row.open.toFixed(2) : '',
+        row.high !== null ? row.high.toFixed(2) : '',
+        row.low !== null ? row.low.toFixed(2) : '',
+        row.close !== null ? row.close.toFixed(2) : '',
+      ])
+    ];
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Earnings Data");
+    const wbout = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([wbout], { type: "application/octet-stream" });
+    saveAs(blob, `${ticker}_earnings_data.xlsx`);
+  };
+
+  const handleDownload = (format: "csv" | "excel") => {
     toast({
       title: "Download started",
       description: `Downloading data as ${format.toUpperCase()}`,
@@ -122,13 +143,12 @@ export default function Dashboard() {
         <div className="text-center space-y-8 py-16">
           <h1 className="text-6xl font-bold text-foreground flex items-center justify-center gap-4">
             <TrendingUp className="w-16 h-16 text-primary" />
-            NSE Earnings Analytics
+            NSE Earnings Dashboard
           </h1>
           <p className="text-xl text-muted-foreground">
             Analyze historical earnings impact on stock price movements
           </p>
         </div>
-
         {/* Input Section */}
         <div className="grid md:grid-cols-2 gap-6">
           <Card>
@@ -141,61 +161,76 @@ export default function Dashboard() {
                 <Input
                   id="ticker"
                   type="text"
-                  placeholder="e.g., RELIANCE"
+                  placeholder="e.g., TCS"
                   value={ticker}
-                  onChange={(e) => setTicker(e.target.value.toUpperCase())}
+                  onChange={e => setTicker(e.target.value.toUpperCase())}
                   className="mt-2"
                 />
               </div>
-              <Button 
+              <Button
                 onClick={handleAnalysis}
-                disabled={isProcessing || !uploadedFile || !ticker}
+                disabled={isProcessing || !uploadedFile || uploadedFile.length === 0 || !ticker}
                 className="w-full"
               >
                 {isProcessing ? "Processing..." : "Run Analysis"}
               </Button>
             </CardContent>
           </Card>
-
           <Card>
             <CardHeader>
               <CardTitle>Upload Earnings Data</CardTitle>
             </CardHeader>
-            <CardContent>
-              <UploadBox 
+               <CardContent>
+                <p className="mb-4 text-sm text-muted-foreground">
+                You can source accurate dates of earnings releases of all NSE listed stocks at {" "}
+                <a
+                href="https://opstra.definedge.com/historical-results-timings"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-primary"
+              >
+                this website
+                </a>.
+                </p>
+
+                <UploadBox
                 onFileUpload={handleFileUpload}
                 uploadedFile={uploadedFile}
                 isProcessing={isProcessing}
-              />
-              {uploadError && (
-                <div className="mt-4 text-sm text-destructive">
-                  {uploadError}
-                </div>
-              )}
+                onRemoveFile={handleRemoveFile}
+                />
+
+                {uploadError && (
+                <div className="mt-4 text-sm text-destructive">{uploadError}</div>
+            )}
             </CardContent>
           </Card>
         </div>
-
         {/* Results Section */}
         {analysisData && (
           <>
-            <StatsCards data={analysisData} ticker={ticker} />
-            
-            <div className="grid lg:grid-cols-2 gap-6">
-              <ResultsTable data={analysisData.data} />
-              <ChartDisplay data={analysisData.data} ticker={ticker} />
+            <StatsCards data={analysisData.stats} ticker={ticker} />
+            {/* Responsive results layout */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Left column: Results Table */}
+              <ResultsTable data={analysisData.results} />
+              {/* Right column: ChartDisplay over HistogramChart */}
+              <div className="flex flex-col gap-6">
+                <ChartDisplay
+                  data={analysisData.results.map(item => ({
+                    date: item.date,
+                    move: item.price_change_pct || 0,
+                    direction: (item.price_change_pct || 0) >= 0 ? "up" : "down",
+                  }))}
+                  ticker={ticker}
+                />
+                <HistogramChart
+                  data={analysisData.results}
+                  ticker={ticker}
+                  stats={analysisData.stats}
+                />
+              </div>
             </div>
-
-            {/* Histogram Chart */}
-            <HistogramChart 
-              data={analysisData.histogram}
-              ticker={ticker}
-              mean={analysisData.mean}
-              stdDev1={analysisData.stdDev1}
-              stdDev2={analysisData.stdDev2}
-              stdDev3={analysisData.stdDev3}
-            />
-
             {/* Download Section */}
             <Card>
               <CardHeader>
@@ -205,15 +240,15 @@ export default function Dashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex gap-4">
-                <Button 
+                <Button
                   variant="outline"
-                  onClick={() => handleDownload('csv')}
+                  onClick={exportCSV}
                 >
                   Download CSV
                 </Button>
-                <Button 
+                <Button
                   variant="outline"
-                  onClick={() => handleDownload('excel')}
+                  onClick={exportExcel}
                 >
                   Download Excel
                 </Button>
@@ -225,3 +260,4 @@ export default function Dashboard() {
     </div>
   );
 }
+
