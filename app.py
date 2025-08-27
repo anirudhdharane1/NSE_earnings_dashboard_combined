@@ -17,11 +17,12 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
+'''allow_origins=[
         "http://localhost:8080",
         "http://127.0.0.1:8080",
         # "https://your-production-domain.com"
-    ],
+    ]''',
+    allow_origins=["http://localhost:8080", "http://127.0.0.1:8080", "https://nse-earnings-dashboard-combined.vercel.app", "*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
