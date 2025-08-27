@@ -1,5 +1,5 @@
-
 from typing import List
+from typing import Optional
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 import pytesseract
@@ -9,6 +9,7 @@ import re
 from datetime import datetime
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+import earnings_dates
 
 from earnings_reaction_calculator import price_changes_for_dates
 
@@ -25,6 +26,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+def get_stored_dates_for_ticker(ticker: str):
+    ticker_upper = ticker.upper()
+    return getattr(earnings_dates, ticker_upper, None)
+
 
 def extract_dates_times_from_text(text):
     lines = [line.strip() for line in text.splitlines() if line.strip()]
@@ -50,23 +56,40 @@ def extract_dates_times_from_text(text):
 @app.post("/analyze")
 async def analyze(
     ticker: str = Form(...),
-    images: List[UploadFile] = File(...)
+    images: Optional[List[UploadFile]] = File(None)
 ):
     all_dates_with_times = []
-    for image in images:
-        contents = await image.read()
-        npimg = np.frombuffer(contents, np.uint8)
-        img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
-        ocr_text = pytesseract.image_to_string(img)
-        dates_with_times = extract_dates_times_from_text(ocr_text)
-        all_dates_with_times.extend(dates_with_times)
+    if images:
+        for image in images:
+            contents = await image.read()
+            npimg = np.frombuffer(contents, np.uint8)
+            img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
+            ocr_text = pytesseract.image_to_string(img)
+            dates_with_times = extract_dates_times_from_text(ocr_text)
+            all_dates_with_times.extend(dates_with_times)
+    else:
+    # Handle case with no uploaded images (e.g. use stored dates)
+        stored_dates = get_stored_dates_for_ticker(ticker)
+        if stored_dates:
+            all_dates_with_times = stored_dates
+        else:
+            return JSONResponse(
+                {"error": "No uploaded images and no stored earnings dates found for this ticker."},
+                status_code=400,
+            )
     # Sort by date (and time if needed)
     all_dates_with_times.sort()
     if not all_dates_with_times:
-        return JSONResponse(
-            {"error": "Could not extract any valid date/time pairs from images."},
-            status_code=400
-        )
+        # Try fetching stored dates
+        stored_dates = get_stored_dates_for_ticker(ticker)
+        if stored_dates:
+            all_dates_with_times = stored_dates
+        else:
+            return JSONResponse(
+                {"error": "No uploaded images and no stored earnings dates found for this ticker."},
+                status_code=400
+            )
+    all_dates_with_times.sort()
     results = price_changes_for_dates(ticker, all_dates_with_times)
     output_results = []
     valid_changes = []
@@ -98,119 +121,3 @@ async def analyze(
         "results": output_results,
         "stats": stats
     })
-
-'''from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi import Body
-from fastapi.responses import JSONResponse
-from earnings_reaction_calculator import price_changes_for_dates  # existing logic
-
-app = FastAPI()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8080",
-        "http://127.0.0.1:8080",
-        # "https://your-production-domain.com"
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-@app.post("/analyze")
-async def analyze(ticker: str = Body(...), dates_with_times: list = Body(...)):
-    if not dates_with_times:
-        return JSONResponse({"error": "No dates provided"}, status_code=400)
-
-    # dates_with_times should be list of {"date": "YYYY-MM-DD", "time": "HH:mm"}
-    date_time_tuples = [(item['date'], item['time']) for item in dates_with_times]
-
-    results = price_changes_for_dates(ticker, date_time_tuples)
-
-    # Format and return results as before
-    # (You can reuse your existing result formatting logic here)
-
-    return {"results": results}'''
-
-'''from typing import List
-from fastapi import FastAPI, Body
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-import numpy as np
-
-from earnings_reaction_calculator import price_changes_for_dates
-
-app = FastAPI()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8080",
-        "http://127.0.0.1:8080",
-        # Add your frontend production URL here
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-@app.post("/analyze")
-async def analyze(
-    ticker: str = Body(...),
-    dates_with_times: List[dict] = Body(...)
-):
-    """
-    Expects JSON body of the form:
-    {
-        "ticker": "TCS",
-        "dates_with_times": [
-            {"date": "2025-08-19", "time": "15:30"},
-            ...
-        ]
-    }
-    """
-    if not dates_with_times:
-        return JSONResponse({"error": "No dates provided"}, status_code=400)
-    
-    # Convert list of dicts to list of tuples (date, time)
-    date_time_tuples = [(item['date'], item['time']) for item in dates_with_times]
-
-    results = price_changes_for_dates(ticker, date_time_tuples)
-    
-    output_results = []
-    valid_changes = []
-    
-    for date, change, open_p, high_p, low_p, close_p in results:
-        output_results.append({
-            "date": date,
-            "price_change_pct": change,
-            "open": open_p,
-            "high": high_p,
-            "low": low_p,
-            "close": close_p
-        })
-        if change is not None:
-            valid_changes.append(abs(change))
-    
-    stats = {}
-    if valid_changes:
-        stats["total_input_dates"] = len(date_time_tuples)
-        stats["absolute_mean"] = round(np.mean(valid_changes), 2)
-        stats["first_std"] = round(np.mean(valid_changes) + np.std(valid_changes), 2)
-        stats["second_std"] = round(np.mean(valid_changes) + 2 * np.std(valid_changes), 2)
-        stats["third_std"] = round(np.mean(valid_changes) + 3 * np.std(valid_changes), 2)
-    else:
-        stats["total_input_dates"] = len(date_time_tuples)
-        stats["absolute_mean"] = None
-        stats["first_std"] = None
-        stats["second_std"] = None
-        stats["third_std"] = None
-    
-    return JSONResponse({
-        "results": output_results,
-        "stats": stats
-    })'''
-

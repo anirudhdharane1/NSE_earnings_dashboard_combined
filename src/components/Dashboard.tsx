@@ -1,5 +1,3 @@
-
-
 import { useState } from "react";
 import { TrendingUp, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,9 +13,12 @@ import { toast } from "@/hooks/use-toast";
 
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
+import { STOCK_TICKERS } from "./ticker";
 
 export default function Dashboard() {
   // uploadedFile state is now an array of Files or null
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [filteredTickers, setFilteredTickers] = useState(STOCK_TICKERS);
   const [ticker, setTicker] = useState("");
   const [uploadedFile, setUploadedFile] = useState<File[] | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -40,15 +41,16 @@ export default function Dashboard() {
     setUploadedFile(newFiles.length > 0 ? newFiles : null);
   };
 
-  const handleAnalysis = async () => {
-    if (!uploadedFile || uploadedFile.length === 0 || !ticker) {
+  /*const handleAnalysis = async () => {
+    if (!ticker) {
       toast({
-        title: "Missing information",
-        description: "Please upload one or more images and enter a ticker symbol",
-        variant: "destructive",
+      title: "Missing information",
+      description: "Please enter a ticker symbol.",
+      variant: "destructive",
       });
       return;
-    }
+      }
+
     setIsProcessing(true);
     setUploadError(null);
     try {
@@ -81,7 +83,53 @@ export default function Dashboard() {
     } finally {
       setIsProcessing(false);
     }
-  };
+  };*/
+
+  const handleAnalysis = async () => {
+  if (!ticker) {
+    toast({
+      title: "Missing information",
+      description: "Please enter a ticker symbol.",
+      variant: "destructive",
+    });
+    return;
+  }
+  setIsProcessing(true);
+  setUploadError(null);
+  try {
+    const formData = new FormData();
+    if (uploadedFile && uploadedFile.length > 0) {
+      uploadedFile.forEach(file => {
+        formData.append("images", file);
+      });
+    }
+    formData.append("ticker", ticker);
+    const response = await fetch("http://localhost:8000/analyze", {
+      method: "POST",
+      body: formData,
+    });
+    if (!response.ok) {
+      throw new Error(`Analysis failed: ${response.statusText}`);
+    }
+    const data = await response.json();
+    setAnalysisData(data);
+    toast({
+      title: "Analysis complete",
+      description: "Earnings impact analysis has been generated",
+    });
+  } catch (error: any) {
+    console.error("Analysis error:", error);
+    setUploadError(error?.message || "Analysis failed");
+    toast({
+      title: "Analysis failed",
+      description: "Please check your connection and try again",
+      variant: "destructive",
+    });
+  } finally {
+    setIsProcessing(false);
+  }
+};
+
 
   // Export CSV functionality
   const exportCSV = () => {
@@ -167,9 +215,54 @@ export default function Dashboard() {
                   className="mt-2"
                 />
               </div>
+                  <Button
+      variant="outline"
+      className="w-full mt-2"
+      onClick={() => setShowDropdown(!showDropdown)}
+    >
+      {showDropdown ? "Hide Ticker List" : "Select Ticker"}
+    </Button>
+
+    {showDropdown && (
+      <div className="mt-2 relative">
+        <Input
+          type="text"
+          placeholder="Search tickers…"
+          onChange={e => {
+            const search = e.target.value.trim().toUpperCase();
+            setFilteredTickers(
+              STOCK_TICKERS.filter(
+                tkr => tkr.includes(search)
+              )
+            );
+          }}
+          className="mb-2"
+        />
+        <div className="max-h-48 overflow-y-auto bg-popover rounded-lg border border-muted shadow-lg absolute w-full z-10">
+          {filteredTickers.length === 0 ? (
+            <div className="p-2 text-sm text-muted-foreground">No tickers found.</div>
+          ) : (
+            filteredTickers.map(tkr => (
+              <div
+                key={tkr}
+                className="p-2 cursor-pointer hover:bg-primary/10"
+                onClick={() => {
+                  setTicker(tkr);
+                  setShowDropdown(false);
+                }}
+              >
+                {tkr}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    )}
+
               <Button
                 onClick={handleAnalysis}
-                disabled={isProcessing || !uploadedFile || uploadedFile.length === 0 || !ticker}
+                /*disabled={isProcessing || !uploadedFile || uploadedFile.length === 0 || !ticker}*/
+                disabled={isProcessing || !ticker}
                 className="w-full"
               >
                 {isProcessing ? "Processing..." : "Run Analysis"}
